@@ -1,0 +1,46 @@
+pipeline {
+  agent any
+
+  tools {
+    nodejs "NodeJS" // 在 Jenkins 全局工具配置中定义名为 "NodeJS" 的安装
+  }
+
+  stages {
+    stage('Checkout') {
+      steps {
+        checkout scm
+      }
+    }
+    stage('Install') {
+      steps {
+        sh 'npm ci'
+      }
+    }
+    stage('Test') {
+      steps {
+        sh 'npm test'
+      }
+      post {
+        always {
+          junit allowEmptyResults: true, testResults: 'test-results/*.xml'
+        }
+      }
+    }
+    stage('Build Artifact') {
+      steps {
+        sh 'mkdir -p dist'
+        sh 'cp index.js dist/'
+        archiveArtifacts artifacts: 'dist/**', fingerprint: true
+      }
+    }
+  }
+
+  post {
+    success {
+      echo "Build succeeded"
+    }
+    failure {
+      echo "Build failed"
+    }
+  }
+}
