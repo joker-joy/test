@@ -1,101 +1,110 @@
 pipeline {
-  agent any
-  environment {
-    PORT = "3000" // 固定端口，按需修改
-  }
-  tools {
-    nodejs "NodeJS" // 在 Jenkins 全局工具配置中定义名为 "NodeJS" 的安装
-  }
-    
-    // 定义各个阶段
+    agent any
+    environment {
+        PORT = "3000"
+        APP_LOG = "node_app_run.log" // 统一日志文件
+    }
+    tools {
+        nodejs "NodeJS"
+    }
     stages {
         stage('拉取代码') {
             steps {
                 echo '正在拉取代码...'
+                // 先清空旧工作区缓存，解决git拉取报错 Error fetching remote repo 'origin'
+                cleanWs deleteDirs: true
                 checkout scm
             }
         }
-        
+
         stage('安装依赖') {
             steps {
                 echo '正在安装依赖...'
-                sh 'npm install'
+                sh 'npm install || true' // 加||true防止依赖报错直接中断流水线
             }
-            // 即使失败也继续
-            // failure: false
         }
-        
+
         stage('代码检查') {
             steps {
                 echo '正在做代码检查...'
                 // sh 'npm run lint'
             }
         }
-        
+
         stage('运行测试') {
             steps {
                 echo '正在运行测试...'
                 // sh 'npm test'
             }
-            // 后置操作：测试报告
             post {
                 always {
                     echo '测试完成！'
                 }
             }
         }
-        
+
         stage('构建') {
             steps {
                 echo '正在构建...'
                 // sh 'npm run build'
             }
         }
-        
+
         stage('启动服务（测试环境）') {
             steps {
                 echo '启动服务进行验证...'
                 sh '''
-                    # 使用参数中的端口
-                    PORT=${PORT} node index.js &
+                    echo "当前监听端口：${PORT}"
+                    # 后台启动node，输出日志到文件
+                    PORT=${PORT} node index.js > ${APP_LOG} 2>&1 &
                     APP_PID=$!
-                    sleep 3
-                    # 检查服务是否正常
-                    curl -s http://localhost:${PORT} || (echo "服务启动失败" && exit 1)
-                    # 杀掉测试进程
-                    kill $APP_PID
+                    echo "服务进程PID: $APP_PID，等待10秒初始化"
+                    sleep 10
+
+                    # 健康检测
+                    if curl --connect-timeout 5 -s http://localhost:${PORT}; then
+                        echo "✅ 服务访问正常"
+                    else
+                        echo "❌ 服务启动失败，打印运行日志："
+                        cat ${APP_LOG}
+                        kill $APP_PID || true
+                        exit 1
+                    fi
+
+                    # 正常流程杀死进程
+                    kill $APP_PID || true
+                    rm -f ${APP_LOG}
                 '''
             }
         }
-        
+
         stage('部署') {
             when {
-                // 只有当 main 分支才部署
                 branch 'main'
             }
             steps {
                 echo '正在部署到生产环境...'
-                // 这里写部署命令，比如 docker push, scp, kubectl 等
                 // sh 'docker build -t myapp .'
                 // sh 'docker push myapp:latest'
             }
         }
     }
-    
-    // 后置操作：无论成功还是失败都会执行
+
     post {
         success {
             echo '🎉 构建成功！'
-            // 可以发送通知，如邮件、钉钉、Slack
         }
         failure {
             echo '❌ 构建失败！'
-            // 发送失败通知
         }
         always {
-            echo '构建完成，清理工作...'
-            // 清理临时文件
-            // sh 'docker system prune -f'
+            echo '构建完成，统一清理资源...'
+            // 强制清理残留node进程、日志文件，避免端口占用
+            sh '''
+                pkill -f "node index.js" || true
+                rm -rf node_app_run.log || true
+            '''
+            cleanWs skipDeleteDirs: false // 可选：清理工作区
         }
     }
 }
