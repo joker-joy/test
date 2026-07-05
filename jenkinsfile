@@ -99,12 +99,10 @@ pipeline {
         }
         always {
             echo '构建完成，统一清理资源...'
-            // 强制清理残留node进程、日志文件，避免端口占用
             sh '''
                 pkill -f "node index.js" || true
                 rm -rf node_app_run.log || true
             '''
-            cleanWs skipDeleteDirs: false // 可选：清理工作区
         }
     }
 }
