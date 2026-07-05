@@ -1,6 +1,8 @@
 pipeline {
   agent any
-
+  environment {
+    PORT = "3000" // 固定端口，按需修改
+  }
   tools {
     nodejs "NodeJS" // 在 Jenkins 全局工具配置中定义名为 "NodeJS" 的安装
   }
