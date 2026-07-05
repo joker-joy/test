@@ -4,43 +4,96 @@ pipeline {
   tools {
     nodejs "NodeJS" // 在 Jenkins 全局工具配置中定义名为 "NodeJS" 的安装
   }
-
-  stages {
-    stage('Checkout') {
-      steps {
-        checkout scm
-      }
-    }
-    stage('Install') {
-      steps {
-        sh 'npm ci'
-      }
-    }
-    stage('Test') {
-      steps {
-        sh 'npm test'
-      }
-      post {
-        always {
-          junit allowEmptyResults: true, testResults: 'test-results/*.xml'
+    
+    // 定义各个阶段
+    stages {
+        stage('拉取代码') {
+            steps {
+                echo '正在拉取代码...'
+                checkout scm
+            }
         }
-      }
+        
+        stage('安装依赖') {
+            steps {
+                echo '正在安装依赖...'
+                sh 'npm install'
+            }
+            // 即使失败也继续
+            // failure: false
+        }
+        
+        stage('代码检查') {
+            steps {
+                echo '正在做代码检查...'
+                // sh 'npm run lint'
+            }
+        }
+        
+        stage('运行测试') {
+            steps {
+                echo '正在运行测试...'
+                // sh 'npm test'
+            }
+            // 后置操作：测试报告
+            post {
+                always {
+                    echo '测试完成！'
+                }
+            }
+        }
+        
+        stage('构建') {
+            steps {
+                echo '正在构建...'
+                // sh 'npm run build'
+            }
+        }
+        
+        stage('启动服务（测试环境）') {
+            steps {
+                echo '启动服务进行验证...'
+                sh '''
+                    # 使用参数中的端口
+                    PORT=${PORT} node index.js &
+                    APP_PID=$!
+                    sleep 3
+                    # 检查服务是否正常
+                    curl -s http://localhost:${PORT} || (echo "服务启动失败" && exit 1)
+                    # 杀掉测试进程
+                    kill $APP_PID
+                '''
+            }
+        }
+        
+        stage('部署') {
+            when {
+                // 只有当 main 分支才部署
+                branch 'main'
+            }
+            steps {
+                echo '正在部署到生产环境...'
+                // 这里写部署命令，比如 docker push, scp, kubectl 等
+                // sh 'docker build -t myapp .'
+                // sh 'docker push myapp:latest'
+            }
+        }
     }
-    stage('Build Artifact') {
-      steps {
-        sh 'mkdir -p dist'
-        sh 'cp index.js dist/'
-        archiveArtifacts artifacts: 'dist/**', fingerprint: true
-      }
+    
+    // 后置操作：无论成功还是失败都会执行
+    post {
+        success {
+            echo '🎉 构建成功！'
+            // 可以发送通知，如邮件、钉钉、Slack
+        }
+        failure {
+            echo '❌ 构建失败！'
+            // 发送失败通知
+        }
+        always {
+            echo '构建完成，清理工作...'
+            // 清理临时文件
+            // sh 'docker system prune -f'
+        }
     }
-  }
-
-  post {
-    success {
-      echo "Build succeeded"
-    }
-    failure {
-      echo "Build failed"
-    }
-  }
 }
